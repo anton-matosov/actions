@@ -1,7 +1,7 @@
 default_install_hook_types: [pre-commit, pre-merge-commit, pre-push]
 default_stages: [pre-commit, pre-merge-commit, pre-push, manual]
 
-# Hook tools come from uv.lock rather than pre-commit's own environments, so one lock pins them all.
+# Python hook tools come from uv.lock rather than pre-commit's own environments, so Renovate bumps them with the rest.
 repos:
   - repo: local
     hooks:
@@ -52,8 +52,7 @@ repos:
         language: system
         files: (^|/)action\.ya?ml$
 
-      - id: actionlint
-        name: actionlint
-        entry: uv run actionlint
-        language: system
-        files: ^\.github/workflows/.+\.ya?ml$
+  - repo: https://github.com/kjanat/actionlint
+    rev: v1.17.1
+    hooks:
+      - id: actionlint-shellcheck

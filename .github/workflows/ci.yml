@@ -40,7 +40,7 @@ jobs:
             - '.github/workflows/ci.yml'
 
   ci-finished-test:
-    name: ci-finished verdicts
+    name: Test ci-finished action
     needs: paths-filter
     if: needs.paths-filter.outputs.pass == 'true'
     runs-on: ubuntu-26.04
@@ -73,9 +73,23 @@ jobs:
         if: steps.failure.outcome != 'failure' || steps.cancelled.outcome != 'failure'
         run: exit 1
 
+  pre-commit:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+      - name: Run every hook on every file
+        env:
+          # A push to main is a merged pull request, not a direct commit.
+          SKIP: no-commit-to-branch
+        run: uv run --locked pre-commit run --all-files --show-diff-on-failure
+
   finished:
     name: CI finished
-    needs: [paths-filter, ci-finished-test]
+    needs: [paths-filter, ci-finished-test, pre-commit]
     if: always()
     runs-on: ubuntu-26.04
     permissions: {}
