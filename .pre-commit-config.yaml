@@ -1,0 +1,59 @@
+default_install_hook_types: [pre-commit, pre-merge-commit, pre-push]
+default_stages: [pre-commit, pre-merge-commit, pre-push, manual]
+
+# Hook tools come from uv.lock rather than pre-commit's own environments, so one lock pins them all.
+repos:
+  - repo: local
+    hooks:
+      - id: end-of-file-fixer
+        name: fix end of files
+        entry: uv run end-of-file-fixer
+        language: system
+        types: [text]
+
+      - id: trailing-whitespace
+        name: trim trailing whitespace
+        entry: uv run trailing-whitespace-fixer
+        language: system
+        types: [text]
+
+      - id: check-merge-conflict
+        name: check for merge conflicts
+        entry: uv run check-merge-conflict
+        language: system
+        types: [text]
+
+      - id: mixed-line-ending
+        name: mixed line ending
+        entry: uv run mixed-line-ending
+        language: system
+        types: [text]
+        args: [--fix=lf]
+
+      - id: check-yaml
+        name: check yaml
+        entry: uv run check-yaml
+        language: system
+        types: [yaml]
+
+      # Changes go into the default branch only through pull requests.
+      - id: no-commit-to-branch
+        name: don't commit to branch
+        entry: uv run no-commit-to-branch
+        language: system
+        pass_filenames: false
+        always_run: true
+        args: [--branch, main]
+
+      # actionlint reads workflows only; the published actions' metadata needs the schema check.
+      - id: check-github-actions
+        name: validate action metadata
+        entry: uv run check-jsonschema --builtin-schema vendor.github-actions
+        language: system
+        files: (^|/)action\.ya?ml$
+
+      - id: actionlint
+        name: actionlint
+        entry: uv run actionlint
+        language: system
+        files: ^\.github/workflows/.+\.ya?ml$
