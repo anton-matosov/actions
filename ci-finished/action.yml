@@ -1,0 +1,16 @@
+name: CI finished
+description: Fail when a needed job failed or was cancelled; a skipped job passes, so a run the paths filter skipped is green
+inputs:
+  needs:
+    description: The calling job's needs context, as toJSON(needs)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check every needed job
+      shell: bash
+      env:
+        NEEDS: ${{ inputs.needs }}
+      run: |
+        jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$NEEDS"
+        jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<<"$NEEDS" >/dev/null

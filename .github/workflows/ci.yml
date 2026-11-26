@@ -1,0 +1,90 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  paths-filter:
+    name: Need to run?
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    timeout-minutes: 10
+    outputs:
+      pass: ${{ steps.filter.outputs.pass }}
+    steps:
+      # A local action needs the repository on disk before it can run.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: filter
+        uses: ./paths-filter
+        with:
+          force: ${{ github.event_name == 'workflow_dispatch' }}
+          filters: |
+            - 'paths-filter/**'
+            - 'ci-finished/**'
+            - '.github/workflows/ci.yml'
+
+  ci-finished-test:
+    name: ci-finished verdicts
+    needs: paths-filter
+    if: needs.paths-filter.outputs.pass == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Success and skipped pass
+        uses: ./ci-finished
+        with:
+          needs: '{"a": {"result": "success"}, "b": {"result": "skipped"}}'
+
+      - name: Failure fails
+        id: failure
+        continue-on-error: true
+        uses: ./ci-finished
+        with:
+          needs: '{"a": {"result": "success"}, "b": {"result": "failure"}}'
+
+      - name: Cancelled fails
+        id: cancelled
+        continue-on-error: true
+        uses: ./ci-finished
+        with:
+          needs: '{"a": {"result": "cancelled"}}'
+
+      - name: Expect both to have failed
+        if: steps.failure.outcome != 'failure' || steps.cancelled.outcome != 'failure'
+        run: exit 1
+
+  finished:
+    name: CI finished
+    needs: [paths-filter, ci-finished-test]
+    if: always()
+    runs-on: ubuntu-26.04
+    permissions: {}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./ci-finished
+        with:
+          needs: ${{ toJSON(needs) }}
