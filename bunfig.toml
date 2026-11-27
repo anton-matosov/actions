@@ -1,0 +1,3 @@
+[test]
+# Bun skips hidden directories when it looks for tests, and the workflow scripts live under .github.
+root = ".github"

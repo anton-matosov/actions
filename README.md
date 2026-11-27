@@ -58,3 +58,5 @@ release's minor version, or pass a full `vX.Y.Z`. Releases are immutable full ve
 tag. A release tag is `main` plus one commit that keeps only the actions, `LICENSE` and `README.md`, and its notes
 link to the diff of those files since the previous release. When those files are unchanged since the previous
 release, the run skips the release.
+
+The release steps' logic lives in `.github/scripts/release.js`; run its tests with `bun test`.
