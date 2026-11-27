@@ -73,6 +73,45 @@ jobs:
         if: steps.failure.outcome != 'failure' || steps.cancelled.outcome != 'failure'
         run: exit 1
 
+  # Not gated on paths-filter: a broken pass output would skip this job along with everything it gates.
+  paths-filter-test:
+    name: Test paths-filter action
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Force passes
+        id: forced
+        uses: ./paths-filter
+        with:
+          force: 'true'
+          filters: |
+            - 'does-not-exist/**'
+
+      - name: No match fails
+        id: unmatched
+        uses: ./paths-filter
+        with:
+          force: 'false'
+          filters: |
+            - 'does-not-exist/**'
+
+      - name: Expect pass only when forced
+        if: steps.forced.outputs.pass != 'true' || steps.unmatched.outputs.pass != 'false'
+        env:
+          FORCED: ${{ steps.forced.outputs.pass }}
+          UNMATCHED: ${{ steps.unmatched.outputs.pass }}
+        run: |
+          echo "::error::forced pass=$FORCED (want true), unmatched pass=$UNMATCHED (want false)"
+          exit 1
+
   pre-commit:
     runs-on: ubuntu-26.04
     timeout-minutes: 10
@@ -119,7 +158,7 @@ jobs:
 
   finished:
     name: CI finished
-    needs: [paths-filter, ci-finished-test, pre-commit, renovate-dry-run]
+    needs: [paths-filter, paths-filter-test, ci-finished-test, pre-commit, renovate-dry-run]
     if: always()
     runs-on: ubuntu-26.04
     permissions: {}
