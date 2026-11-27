@@ -103,13 +103,26 @@ jobs:
           filters: |
             - 'does-not-exist/**'
 
-      - name: Expect pass only when forced
-        if: steps.forced.outputs.pass != 'true' || steps.unmatched.outputs.pass != 'false'
+      # A pull request always changes at least one file; a push or manual run can compare a commit with itself.
+      - name: Match passes
+        id: matched
+        if: github.event_name == 'pull_request'
+        uses: ./paths-filter
+        with:
+          force: 'false'
+          filters: |
+            - '**'
+
+      - name: Expect pass when forced or matched
+        if: >-
+          steps.forced.outputs.pass != 'true' || steps.unmatched.outputs.pass != 'false' ||
+          (github.event_name == 'pull_request' && steps.matched.outputs.pass != 'true')
         env:
           FORCED: ${{ steps.forced.outputs.pass }}
           UNMATCHED: ${{ steps.unmatched.outputs.pass }}
+          MATCHED: ${{ steps.matched.outputs.pass }}
         run: |
-          echo "::error::forced pass=$FORCED (want true), unmatched pass=$UNMATCHED (want false)"
+          echo "::error::forced pass=$FORCED (want true), unmatched pass=$UNMATCHED (want false), matched pass=$MATCHED (want true on pull_request)"
           exit 1
 
   pre-commit:
