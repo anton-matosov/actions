@@ -1,0 +1,42 @@
+name: Paths filter
+description: Report whether the change touches any of the given paths
+inputs:
+  filters:
+    description: Path globs, one YAML list entry per line
+    required: true
+  force:
+    description: Report a match whatever the change, e.g. for a manual run
+    default: 'false'
+outputs:
+  pass:
+    description: A changed file matches the filters, or force is set
+    value: ${{ steps.filter.outputs.pass == 'true' || inputs.force == 'true' }}
+runs:
+  using: composite
+  steps:
+    # nx-set-shas needs the history to find the base commit. A non-PR event diffs the commits locally, and the
+    # treeless clone then fetches the base tree on demand, which a private repository serves only with credentials.
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
+        filter: tree:0
+        persist-credentials: true
+
+    # A failed or cancelled main run may have skipped work, so a push to main compares against the last commit
+    # its workflow passed on, not the previous push.
+    - name: Find the base commit
+      id: shas
+      uses: nrwl/nx-set-shas@e602fada7ad5987b0f7b1905e7a99ea1c661514c # v5.1.0
+      with:
+        set-environment-variables-for-job: 'false'
+        # A merge group compares against its real base, not the previous pull request in the group.
+        use-previous-merge-group-commit: 'false'
+
+    - name: Filter
+      id: filter
+      uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+      with:
+        base: ${{ steps.shas.outputs.base }}
+        filters: |
+          pass:
+          ${{ inputs.filters }}

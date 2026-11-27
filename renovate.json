@@ -1,6 +1,28 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Every pin in this repository (actions in workflows and action.yml files, dev tools in uv.lock, the bunx package in .pre-commit-config.yaml, and *_VERSION workflow variables marked with a renovate comment) is bumped here. A release waits a few days before it is proposed, so a broken or compromised release is usually yanked first. No hourly limit, so a pin bump never waits behind others.",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    "helpers:pinGitHubActionDigestsToSemver",
+    "customManagers:githubActionsVersions"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Packages pre-commit hooks run through bunx",
+      "managerFilePatterns": ["/(^|/)\\.pre-commit-config\\.yaml$/"],
+      "matchStrings": ["bunx --package (?<depName>[^\\s@]+)@(?<currentValue>\\S+)"],
+      "datasourceTemplate": "npm"
+    }
+  ],
+  "automerge": true,
+  "prHourlyLimit": 0,
+  "minimumReleaseAge": "3 days",
+  "packageRules": [
+    {
+      "description": "An x.y.0 release waits longer than the default",
+      "matchNewValue": "/^(v|==)?\\d+\\.\\d+\\.0$/",
+      "minimumReleaseAge": "10 days"
+    }
   ]
 }
