@@ -23,7 +23,7 @@ a failed or cancelled run skipped is not lost. It checks the repository out itse
       pass: ${{ steps.filter.outputs.pass }}
     steps:
       - id: filter
-        uses: anton-matosov/actions/paths-filter@v1
+        uses: anton-matosov/actions/paths-filter@v1.0.0
         with:
           force: ${{ github.event_name == 'workflow_dispatch' }}
           filters: |
@@ -46,7 +46,14 @@ Require this job's check in branch protection.
     runs-on: ubuntu-latest
     permissions: {}
     steps:
-      - uses: anton-matosov/actions/ci-finished@v1
+      - uses: anton-matosov/actions/ci-finished@v1.0.0
         with:
           needs: ${{ toJSON(needs) }}
 ```
+
+## Releasing
+
+Run the `release` workflow from `main`. Leave `version` empty to bump the latest release's minor version, or pass
+a full `vX.Y.Z`. Releases are immutable full versions; there is no floating major tag. A release tag is `main`
+plus one commit that keeps only the actions, `LICENSE` and `README.md`, and its notes link to the diff of those
+files since the previous release.
