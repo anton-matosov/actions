@@ -1,2 +1,6 @@
 # uv sync creates the dev-tool environment here.
 .venv/
+
+# In tree temp files
+/.tmp/
+/.worktrees/
