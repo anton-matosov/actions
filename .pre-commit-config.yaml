@@ -9,7 +9,7 @@ repos:
       # --no-global validates the named files as repository config, not as self-hosted global config.
       - id: renovate-config-validator
         name: validate renovate config
-        entry: bunx --package renovate@44.259.0 renovate-config-validator --strict --no-global
+        entry: bunx --package renovate@44.260.0 renovate-config-validator --strict --no-global
         language: system
         files: (^|/)\.?renovate(rc)?(\.json[c5]?)?$
 
