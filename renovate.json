@@ -7,8 +7,8 @@
   "minimumReleaseAge": "3 days",
   "packageRules": [
     {
-      "description": "An x.y.0 release waits longer than the default, since those usually carry the most bugs",
-      "matchNewValue": "/^v?\\d+\\.\\d+\\.0$/",
+      "description": "An x.y.0 release waits longer than the default",
+      "matchNewValue": "/^(v|==)?\\d+\\.\\d+\\.0$/",
       "minimumReleaseAge": "10 days"
     }
   ]
