@@ -7,23 +7,37 @@ on:
         description: Version to release, e.g. v1.4.0; empty bumps the latest release's minor version
         required: false
         default: ''
+      dry-run:
+        description: Resolve the version and build the stripped tree, and create the release commit, but no tag or release
+        type: boolean
+        default: false
+  # A weekly release ships whatever landed since the last one, such as Renovate's bumps of the actions' own pins.
+  schedule:
+    - cron: '0 6 * * 1'
 
 permissions:
   contents: read
 
+# A dry run releases nothing, so it neither waits for nor displaces a pending release.
 concurrency:
-  group: release
+  group: release${{ inputs.dry-run && '-dry-run' || '' }}
   cancel-in-progress: false
 
 jobs:
   release:
     name: Release
-    if: github.ref == 'refs/heads/main'
+    # A dry run may run from any branch, to try out changes to this workflow.
+    if: github.ref == 'refs/heads/main' || inputs.dry-run
     runs-on: ubuntu-26.04
     permissions:
       contents: write
     timeout-minutes: 10
     steps:
+      # github-script requires the step scripts from the checked-out repository.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Resolve version
         id: version
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -31,86 +45,22 @@ jobs:
           VERSION: ${{ inputs.version }}
         with:
           script: |
-            const { owner, repo } = context.repo;
-            const semver = /^v(\d+)\.(\d+)\.(\d+)$/;
+            const { resolveVersion } = require('./.github/scripts/release.js');
+            await resolveVersion({ github, context, core }, { requested: process.env.VERSION });
 
-            let previous = '';
-            try {
-              previous = (await github.rest.repos.getLatestRelease({ owner, repo })).data.tag_name;
-            } catch (error) {
-              if (error.status !== 404) throw error;
-            }
-
-            let version = process.env.VERSION.trim();
-            if (version) {
-              if (!version.startsWith('v')) version = `v${version}`;
-              if (!semver.test(version)) {
-                core.setFailed(`Version ${version} is not vMAJOR.MINOR.PATCH`);
-                return;
-              }
-            } else if (previous) {
-              const match = semver.exec(previous);
-              if (!match) {
-                core.setFailed(`Latest release ${previous} is not vMAJOR.MINOR.PATCH; pass a version`);
-                return;
-              }
-              version = `v${match[1]}.${Number(match[2]) + 1}.0`;
-            } else {
-              version = 'v1.0.0';
-            }
-
-            // Releases are immutable: a tag is never moved or overwritten.
-            try {
-              await github.rest.git.getRef({ owner, repo, ref: `tags/${version}` });
-              core.setFailed(`Tag ${version} already exists`);
-              return;
-            } catch (error) {
-              if (error.status !== 404) throw error;
-            }
-
-            // Only a version above the latest release becomes the latest, so the next bump starts from the highest.
-            const prev = semver.exec(previous)?.slice(1).map(Number);
-            const next = semver.exec(version).slice(1).map(Number);
-            const differs = prev ? next.findIndex((part, i) => part !== prev[i]) : -1;
-            const latest = !prev || (differs >= 0 && next[differs] > prev[differs]);
-
-            core.info(`Releasing ${version}${previous ? ` after ${previous}` : ''}${latest ? '' : ' (not latest)'}`);
-            core.setOutput('version', version);
-            core.setOutput('previous', previous);
-            core.setOutput('latest', String(latest));
-
-      # The release ships only the actions, LICENSE and README.md.
       - name: Build the stripped tree
         id: tree
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PREVIOUS: ${{ steps.version.outputs.previous }}
         with:
           script: |
-            const { owner, repo } = context.repo;
-            const commit = (await github.rest.git.getCommit({ owner, repo, commit_sha: context.sha })).data;
-            const root = (await github.rest.git.getTree({ owner, repo, tree_sha: commit.tree.sha })).data.tree;
+            const { buildTree } = require('./.github/scripts/release.js');
+            await buildTree({ github, context, core }, { previous: process.env.PREVIOUS });
 
-            const kept = [];
-            for (const entry of root) {
-              if (entry.type === 'blob' && ['LICENSE', 'README.md'].includes(entry.path)) {
-                kept.push(entry);
-              } else if (entry.type === 'tree') {
-                const files = (await github.rest.git.getTree({ owner, repo, tree_sha: entry.sha })).data.tree;
-                if (files.some((file) => file.type === 'blob' && ['action.yml', 'action.yaml'].includes(file.path))) {
-                  kept.push(entry);
-                }
-              }
-            }
-            core.info(`Shipping: ${kept.map((entry) => entry.path).join(', ')}`);
-
-            const tree = (await github.rest.git.createTree({
-              owner,
-              repo,
-              tree: kept.map(({ path, mode, type, sha }) => ({ path, mode, type, sha })),
-            })).data;
-            core.setOutput('tree', tree.sha);
-
-      # The release commit sits on top of the released main commit, so log and blame on a tag show the real history.
+      # A dry run creates the commit too: nothing points to it, and its SHA shows exactly what would ship.
       - name: Create the release commit
+        if: steps.tree.outputs.changed == 'true'
         id: commit
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
@@ -118,22 +68,11 @@ jobs:
           TREE: ${{ steps.tree.outputs.tree }}
         with:
           script: |
-            const { owner, repo } = context.repo;
-            const version = process.env.VERSION;
+            const { createReleaseCommit } = require('./.github/scripts/release.js');
+            await createReleaseCommit({ github, context, core }, { version: process.env.VERSION, tree: process.env.TREE });
 
-            const commit = (await github.rest.git.createCommit({
-              owner,
-              repo,
-              message: `Release ${version}\n\nStrip everything but the actions, LICENSE and README.md.`,
-              tree: process.env.TREE,
-              parents: [context.sha],
-            })).data;
-
-            core.info(`Created release commit ${commit.sha}`);
-            core.setOutput('commit', commit.sha);
-
-      # createRelease also creates the tag, so a failed run leaves neither behind and can simply be rerun.
       - name: Tag and create the release
+        if: steps.tree.outputs.changed == 'true' && !inputs.dry-run
         id: release
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
@@ -143,34 +82,24 @@ jobs:
           COMMIT: ${{ steps.commit.outputs.commit }}
         with:
           script: |
-            const { owner, repo } = context.repo;
-            const version = process.env.VERSION;
-            const previous = process.env.PREVIOUS;
-            const commit = process.env.COMMIT;
+            const { createRelease } = require('./.github/scripts/release.js');
+            await createRelease({ github, context, core }, {
+              version: process.env.VERSION,
+              previous: process.env.PREVIOUS,
+              latest: process.env.LATEST,
+              commit: process.env.COMMIT,
+            });
 
-            const notes = (await github.rest.repos.generateReleaseNotes({
-              owner,
-              repo,
-              tag_name: version,
-              target_commitish: commit,
-              ...(previous && { previous_tag_name: previous }),
-            })).data;
-
-            let body = notes.body;
-            if (previous) {
-              // Two dots compare the stripped trees directly; three would diff against main and show every
-              // file the release leaves out as deleted.
-              const diff = `${context.serverUrl}/${owner}/${repo}/compare/${previous}..${version}`;
-              body += `\n\n**Release diff**: ${diff}`;
-            }
-
-            const release = (await github.rest.repos.createRelease({
-              owner,
-              repo,
-              tag_name: version,
-              target_commitish: commit,
-              name: version,
-              body,
-              make_latest: process.env.LATEST,
-            })).data;
-            core.notice(`Released ${release.html_url}`);
+      - name: Report the dry run
+        if: inputs.dry-run
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          LATEST: ${{ steps.version.outputs.latest }}
+          CHANGED: ${{ steps.tree.outputs.changed }}
+          COMMIT: ${{ steps.commit.outputs.commit }}
+        run: |
+          if [[ "$CHANGED" == true ]]; then
+            echo "::notice::Dry run: would release $VERSION (latest: $LATEST) from commit $COMMIT"
+          else
+            echo "::notice::Dry run: nothing changed, so no release would be made"
+          fi
