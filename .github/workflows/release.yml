@@ -7,6 +7,9 @@ on:
         description: Version to release, e.g. v1.4.0; empty bumps the latest release's minor version
         required: false
         default: ''
+  # A weekly release ships whatever landed since the last one, such as Renovate's bumps of the actions' own pins.
+  schedule:
+    - cron: '0 6 * * 1'
 
 permissions:
   contents: read
@@ -83,6 +86,8 @@ jobs:
       - name: Build the stripped tree
         id: tree
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PREVIOUS: ${{ steps.version.outputs.previous }}
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -109,8 +114,21 @@ jobs:
             })).data;
             core.setOutput('tree', tree.sha);
 
+            // Identical contents hash to the identical tree, so an unchanged release is a tree SHA match.
+            const previous = process.env.PREVIOUS;
+            if (previous) {
+              const released = (await github.rest.repos.getCommit({ owner, repo, ref: previous })).data;
+              if (released.commit.tree.sha === tree.sha) {
+                core.notice(`Nothing changed since ${previous}; skipping the release`);
+                core.setOutput('changed', 'false');
+                return;
+              }
+            }
+            core.setOutput('changed', 'true');
+
       # The release commit sits on top of the released main commit, so log and blame on a tag show the real history.
       - name: Create the release commit
+        if: steps.tree.outputs.changed == 'true'
         id: commit
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
@@ -134,6 +152,7 @@ jobs:
 
       # createRelease also creates the tag, so a failed run leaves neither behind and can simply be rerun.
       - name: Tag and create the release
+        if: steps.tree.outputs.changed == 'true'
         id: release
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
