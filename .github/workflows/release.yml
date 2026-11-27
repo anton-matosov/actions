@@ -7,6 +7,10 @@ on:
         description: Version to release, e.g. v1.4.0; empty bumps the latest release's minor version
         required: false
         default: ''
+      dry-run:
+        description: Resolve the version and build the stripped tree, and create the release commit, but no tag or release
+        type: boolean
+        default: false
   # A weekly release ships whatever landed since the last one, such as Renovate's bumps of the actions' own pins.
   schedule:
     - cron: '0 6 * * 1'
@@ -14,14 +18,16 @@ on:
 permissions:
   contents: read
 
+# A dry run releases nothing, so it neither waits for nor displaces a pending release.
 concurrency:
-  group: release
+  group: release${{ inputs.dry-run && '-dry-run' || '' }}
   cancel-in-progress: false
 
 jobs:
   release:
     name: Release
-    if: github.ref == 'refs/heads/main'
+    # A dry run may run from any branch, to try out changes to this workflow.
+    if: github.ref == 'refs/heads/main' || inputs.dry-run
     runs-on: ubuntu-26.04
     permissions:
       contents: write
@@ -52,6 +58,7 @@ jobs:
             const { buildTree } = require('./.github/scripts/release.js');
             await buildTree({ github, context, core }, { previous: process.env.PREVIOUS });
 
+      # A dry run creates the commit too: nothing points to it, and its SHA shows exactly what would ship.
       - name: Create the release commit
         if: steps.tree.outputs.changed == 'true'
         id: commit
@@ -65,7 +72,7 @@ jobs:
             await createReleaseCommit({ github, context, core }, { version: process.env.VERSION, tree: process.env.TREE });
 
       - name: Tag and create the release
-        if: steps.tree.outputs.changed == 'true'
+        if: steps.tree.outputs.changed == 'true' && !inputs.dry-run
         id: release
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
@@ -82,3 +89,17 @@ jobs:
               latest: process.env.LATEST,
               commit: process.env.COMMIT,
             });
+
+      - name: Report the dry run
+        if: inputs.dry-run
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          LATEST: ${{ steps.version.outputs.latest }}
+          CHANGED: ${{ steps.tree.outputs.changed }}
+          COMMIT: ${{ steps.commit.outputs.commit }}
+        run: |
+          if [[ "$CHANGED" == true ]]; then
+            echo "::notice::Dry run: would release $VERSION (latest: $LATEST) from commit $COMMIT"
+          else
+            echo "::notice::Dry run: nothing changed, so no release would be made"
+          fi
