@@ -1,6 +1,15 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended"
+  "description": "Every pin in this repository (actions in workflows and action.yml files, dev tools in uv.lock) is bumped here. A release waits a few days before it is proposed, so a broken or compromised release is usually yanked first. No hourly limit, so a pin bump never waits behind others.",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigestsToSemver"],
+  "automerge": true,
+  "prHourlyLimit": 0,
+  "minimumReleaseAge": "3 days",
+  "packageRules": [
+    {
+      "description": "An x.y.0 release waits longer than the default, since those usually carry the most bugs",
+      "matchNewValue": "/^v?\\d+\\.\\d+\\.0$/",
+      "minimumReleaseAge": "10 days"
+    }
   ]
 }
