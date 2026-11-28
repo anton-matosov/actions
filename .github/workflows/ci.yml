@@ -181,7 +181,7 @@ jobs:
       - name: Look up every update without opening pull requests
         env:
           # renovate: datasource=npm depName=renovate
-          RENOVATE_VERSION: 44.262.1
+          RENOVATE_VERSION: 44.262.2
           LOG_LEVEL: debug
           # Lifts the anonymous API rate limit for the GitHub tag and release lookups.
           GITHUB_COM_TOKEN: ${{ github.token }}
